@@ -6,6 +6,7 @@ import DATA_IMPORT_STATUS from '../../dataImportStatus';
 // eslint-disable-next-line import/no-webpack-loader-syntax
 import RTSPolygonsExtractWorker from '../workers/RTSPolygonsExtractor.worker';
 import WebWorkerPromise from 'webworker-promise';
+import rejectOnWorkerError from '../helpers/rejectOnWorkerError';
 import generateUID from '../../../peppermint-tools/utils/generateUID';
 import colorTools from '../../colorTools';
 
@@ -366,52 +367,75 @@ export default class LazyRTStructReader {
     const polygonChunks = [];
     const workers = [];
     let workerId = 0;
-    while (arrayIndex < numPolygons) {
-      const worker = new RTSPolygonsExtractWorker();
-      workers.push(worker);
-      const workerPromise = new WebWorkerPromise(worker);
-      let arrayEnd = arrayIndex + arrayStride;
-      if (numPolygons - arrayEnd <= arrayStride) {
-        arrayEnd = numPolygons;
-      }
-      const subArray = [];
-      for (let i = arrayIndex; i < arrayEnd; i++) {
-        const dataSet = polygonItems[i].dataSet;
-        const elements = dataSet.elements;
-        // ContourImageSequence Item 0
-        const ImageSequenceElements =
-          elements.x30060016.items[0].dataSet.elements;
-        subArray.push({
-          ContourGeometricType: elements.x30060042,
-          ContourImageSequence: {
-            ReferencedSOPInstanceUID: ImageSequenceElements.x00081155,
-            ReferencedFrameNumber: ImageSequenceElements.x00081160,
-          },
-          ContourNumber: elements.x30060048,
-          NumberOfContourPoints: elements.x30060046,
-          ContourData: elements.x30060050,
-        });
-      }
-
-      polygonChunks.push(
-        workerPromise.postMessage(
-          {
+    try {
+      while (arrayIndex < numPolygons) {
+        let worker;
+        try {
+          worker = new RTSPolygonsExtractWorker();
+        } catch (err) {
+          // The browser refused the worker (typically a Content-Security-Policy).
+          // Nothing has been received from the workers dispatched so far -- this
+          // loop never yields -- so extract the whole ROI on the main thread.
+          console.warn(
+            `RTStruct polygon worker unavailable, extracting on the main thread: ${err}`
+          );
+          workers.forEach(w => w.terminate());
+          return this._extractPolygons(
+            ROIContourUid,
             ROINumber,
-            byteArray,
-            polygonItems: subArray,
-            sopInstancesInSeries: this._sopInstancesInSeries,
-            sopInstanceUid: this._sopInstanceUid,
-            workerId: workerId++,
-          },
-          [],
-          (eventName, data) => onWorkerUpdate(data)
-        )
-      );
+            polygonItems,
+            roiContour
+          );
+        }
+        workers.push(worker);
+        const workerPromise = new WebWorkerPromise(worker);
+        let arrayEnd = arrayIndex + arrayStride;
+        if (numPolygons - arrayEnd <= arrayStride) {
+          arrayEnd = numPolygons;
+        }
+        const subArray = [];
+        for (let i = arrayIndex; i < arrayEnd; i++) {
+          const dataSet = polygonItems[i].dataSet;
+          const elements = dataSet.elements;
+          // ContourImageSequence Item 0
+          const ImageSequenceElements =
+            elements.x30060016.items[0].dataSet.elements;
+          subArray.push({
+            ContourGeometricType: elements.x30060042,
+            ContourImageSequence: {
+              ReferencedSOPInstanceUID: ImageSequenceElements.x00081155,
+              ReferencedFrameNumber: ImageSequenceElements.x00081160,
+            },
+            ContourNumber: elements.x30060048,
+            NumberOfContourPoints: elements.x30060046,
+            ContourData: elements.x30060050,
+          });
+        }
 
-      arrayIndex = arrayEnd;
+        polygonChunks.push(
+          rejectOnWorkerError(
+            worker,
+            workerPromise.postMessage(
+              {
+                ROINumber,
+                byteArray,
+                polygonItems: subArray,
+                sopInstancesInSeries: this._sopInstancesInSeries,
+                sopInstanceUid: this._sopInstanceUid,
+                workerId: workerId++,
+              },
+              [],
+              (eventName, data) => onWorkerUpdate(data)
+            )
+          )
+        );
+
+        arrayIndex = arrayEnd;
+      }
+      await Promise.all(polygonChunks);
+    } finally {
+      workers.forEach(worker => worker.terminate());
     }
-    await Promise.all(polygonChunks);
-    workers.forEach(worker => worker.terminate());
 
     return polygons;
   }

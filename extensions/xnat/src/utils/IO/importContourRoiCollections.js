@@ -51,40 +51,50 @@ const getAndImportContourFile = async (
     );
   }
 
-  switch (roiCollectionInfo.collectionType) {
-    case 'AIM':
-      const aimFile = await fetchXML(uri, updateProgress).promise;
+  try {
+    switch (roiCollectionInfo.collectionType) {
+      case 'AIM':
+        const aimFile = await fetchXML(uri, updateProgress).promise;
 
-      if (!aimFile) {
-        errorMessage = `Invalid AIM file for Collection ${roiCollectionInfo.name}`;
+        if (!aimFile) {
+          errorMessage = `Invalid AIM file for Collection ${roiCollectionInfo.name}`;
+          break;
+        }
+
+        await roiImporter.importAIMfile(
+          aimFile,
+          roiCollectionInfo.name,
+          roiCollectionInfo.label
+        );
         break;
-      }
+      case 'RTSTRUCT':
+        const rtStructFile = await fetchArrayBuffer(uri, updateProgress)
+          .promise;
 
-      await roiImporter.importAIMfile(
-        aimFile,
-        roiCollectionInfo.name,
-        roiCollectionInfo.label
-      );
-      break;
-    case 'RTSTRUCT':
-      const rtStructFile = await fetchArrayBuffer(uri, updateProgress).promise;
+        if (!rtStructFile) {
+          errorMessage = `Invalid RTStruct file for Collection ${roiCollectionInfo.name}`;
+          break;
+        }
 
-      if (!rtStructFile) {
-        errorMessage = `Invalid RTStruct file for Collection ${roiCollectionInfo.name}`;
+        await roiImporter.importRTStruct(
+          rtStructFile,
+          roiCollectionInfo.name,
+          roiCollectionInfo.label
+        );
         break;
-      }
-
-      await roiImporter.importRTStruct(
-        rtStructFile,
-        roiCollectionInfo.name,
-        roiCollectionInfo.label
-      );
-      break;
-    default:
-      console.error(
-        `Collection ${roiCollectionInfo.name} has unsupported filetype: ${roiCollectionInfo.collectionType}.`
-      );
-      errorMessage = `Collection ${roiCollectionInfo.name} has unsupported filetype: ${roiCollectionInfo.collectionType}.`;
+      default:
+        console.error(
+          `Collection ${roiCollectionInfo.name} has unsupported filetype: ${roiCollectionInfo.collectionType}.`
+        );
+        errorMessage = `Collection ${roiCollectionInfo.name} has unsupported filetype: ${roiCollectionInfo.collectionType}.`;
+    }
+  } catch (err) {
+    // Without this an error anywhere in the import leaves the import modal
+    // stuck at the last progress message, with nothing telling the user.
+    console.error(err);
+    errorMessage = `Failed to import Collection ${
+      roiCollectionInfo.name
+    }: ${(err && err.message) || err}`;
   }
 
   return errorMessage;

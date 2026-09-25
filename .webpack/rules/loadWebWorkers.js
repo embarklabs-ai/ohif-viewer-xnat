@@ -1,7 +1,12 @@
 /**
  * This allows us to include web workers in our bundle, and VTK.js
- * web workers in our bundle. While this increases bundle size, it
- * cuts down on the number of includes we need for `script tag` usage.
+ * web workers in our bundle.
+ *
+ * Workers are emitted as separate same-origin files, not inlined. Inlined
+ * workers are spawned from blob: URLs, which a Content-Security-Policy
+ * without `worker-src` (falling back to `script-src 'self'`, as XNAT 1.10.1+
+ * sends) refuses -- the RTSTRUCT import then hangs at "Downloading 100%".
+ * A file next to the bundles is covered by 'self'.
  */
 const loadWebWorkers = {
   test: /\.worker\.js$/,
@@ -9,7 +14,7 @@ const loadWebWorkers = {
   use: [
     {
       loader: 'worker-loader',
-      options: { inline: true, fallback: false },
+      options: { name: '[name].[hash].js' },
     },
   ],
 };

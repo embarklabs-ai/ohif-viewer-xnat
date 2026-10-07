@@ -125,6 +125,15 @@ export default class MeasurementImportMenu extends React.Component {
           const data_fields = roiCollectionInfo.items[0].data_fields;
 
           const referencedScan = getReferencedScan(roiCollectionInfo);
+          if (!referencedScan) {
+            // Same guard as the contour import menu: a collection whose series
+            // isn't in the loaded session must not break the list.
+            console.warn(
+              `Measurement collection ${data_fields.label ||
+                data_fields.ID} references no scan in the loaded session; not listed for import.`
+            );
+            return;
+          }
           const referencedDisplaySets = referencedScan.displaySets;
           let referencedSeriesNumber = referencedScan.seriesNumber;
           const collectiveSeriesNotation = [];

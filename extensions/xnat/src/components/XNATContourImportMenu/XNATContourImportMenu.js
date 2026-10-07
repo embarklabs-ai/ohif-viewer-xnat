@@ -287,6 +287,17 @@ export default class XNATContourImportMenu extends React.Component {
           const data_fields = roiCollectionInfo.items[0].data_fields;
 
           const referencedScan = getReferencedScan(roiCollectionInfo);
+          if (!referencedScan) {
+            // The collection references a series that isn't in this session's
+            // viewer metadata (deleted scan, non-displayable series, or a
+            // collection stored against another session). Skip it rather than
+            // let one collection take the whole import list down.
+            console.warn(
+              `Contour collection ${data_fields.label ||
+                data_fields.ID} references no scan in the loaded session; not listed for import.`
+            );
+            return;
+          }
           const referencedDisplaySets = referencedScan.displaySets;
           let referencedSeriesNumber = referencedScan.seriesNumber;
           const collectiveSeriesNotation = [];
